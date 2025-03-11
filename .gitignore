@@ -1,0 +1,7 @@
+.env
+venv/
+*/venv/
+src/terraform/.terraform/
+src/terraform/.terraform.lock.hcl
+src/terraform/terraform.tfstate
+src/terraform/terraform.tfstate.backup
