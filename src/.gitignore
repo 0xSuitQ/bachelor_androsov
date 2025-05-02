@@ -1,0 +1,6 @@
+.env
+change_ip.sh
+encrypted_files.db
+terraform.tfvars
+*/terraform.tfvars
+terraform/terraform.tfvars
