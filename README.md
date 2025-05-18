@@ -28,7 +28,7 @@
 
 1. **Клонування репозиторію**
    ```bash
-   git clone https://github.com/
+   git clone https://github.com/0xSuitQ/bachelor_androsov
    cd graduation_project_2.0
    ```
 
