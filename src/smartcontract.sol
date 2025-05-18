@@ -2,7 +2,6 @@
 pragma solidity ^0.8.17;
 
 contract KeySharesManager {
-    // Struct to store key shares data
     struct KeySharesData {
         uint256 chunks;
         uint256 totalLength;
@@ -10,25 +9,19 @@ contract KeySharesManager {
         // The actual shares data is stored in a separate mapping for efficient updates
     }
     
-    // Mapping from username hash to their key shares metadata
     mapping(bytes32 => KeySharesData) private userKeyData;
     
-    // Mapping from username hash + chunk index to shares array 
-    // (username hash -> chunk index -> formatted share data)
     mapping(bytes32 => mapping(uint256 => string)) private shareChunks;
     
-    // Access control - only the server with this address can modify data
     address private serverAddress;
     
-    // Events
     event KeySharesStored(bytes32 indexed usernameHash);
     event KeySharesRetrieved(bytes32 indexed usernameHash);
     
     constructor() {
-        serverAddress = msg.sender;
+        serverAddress = 0x405195fFea8027628c2Cc655D00d2403391aAf1A;
     }
     
-    // Modifier to restrict access to the server
     modifier onlyServer() {
         require(msg.sender == serverAddress, "Only the server can call this function");
         _;
@@ -61,6 +54,7 @@ contract KeySharesManager {
     function retrieveKeyShares(string memory username) 
         external 
         view 
+		onlyServer
         returns (
             uint256 chunks,
             uint256 totalLength,
@@ -69,7 +63,6 @@ contract KeySharesManager {
     {
         bytes32 usernameHash = keccak256(abi.encodePacked(username));
         
-        // Check if user exists
         require(userKeyData[usernameHash].exists, "No key shares found for this user");
         
         KeySharesData memory data = userKeyData[usernameHash];
@@ -83,7 +76,7 @@ contract KeySharesManager {
         return (data.chunks, data.totalLength, shares);
     }
     
-    function userExists(string memory username) external view returns (bool) {
+    function userExists(string memory username) external view onlyServer returns (bool) {
         bytes32 usernameHash = keccak256(abi.encodePacked(username));
         return userKeyData[usernameHash].exists;
     }
@@ -93,11 +86,9 @@ contract KeySharesManager {
         
         require(userKeyData[usernameHash].exists, "User does not exist");
         
-        // Delete metadata
         uint256 chunks = userKeyData[usernameHash].chunks;
         delete userKeyData[usernameHash];
         
-        // Delete each chunk
         for (uint256 i = 0; i < chunks; i++) {
             delete shareChunks[usernameHash][i];
         }

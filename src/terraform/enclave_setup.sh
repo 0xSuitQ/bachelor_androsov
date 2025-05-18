@@ -3,12 +3,8 @@ set -e  # Exit on any error
 
 echo "Starting Secure Key Management Enclave Setup..."
 
-#-----------------------
-# Secure Key Management Enclave Setup
-#-----------------------
 mkdir -p /home/ec2-user/secure-enclave
 
-# Create Dockerfile for key manager with debug tools
 cat <<DOCKERFILE > /home/ec2-user/secure-enclave/Dockerfile.enclave
 FROM public.ecr.aws/amazonlinux/amazonlinux:2
 
@@ -42,7 +38,6 @@ MASTER_KEY = None
 
 def mod_inverse(k, prime):
 	"""Calculate the modular multiplicative inverse of k modulo prime"""
-	# Extended Euclidean Algorithm to find modular inverse
 	s, old_s = 0, 1
 	t, old_t = 1, 0
 	r, old_r = prime, k
@@ -53,27 +48,22 @@ def mod_inverse(k, prime):
 		old_s, s = s, old_s - quotient * s
 		old_t, t = t, old_t - quotient * t
 	
-	# Return the inverse modulo prime
 	return old_s % prime
 
 def evaluate_polynomial(coefficients, x, prime):
-	"""Evaluate polynomial at point x using Horner's method"""
 	result = 0
 	for coef in reversed(coefficients):
 		result = (result * x + coef) % prime
 	return result
 
 def split_secret(secret, threshold, total_shares, prime=PRIME):
-	"""Split a secret into total_shares shares, requiring threshold to reconstruct"""
 	if secret >= prime:
 		raise ValueError("Secret must be smaller than the prime")
 	
-	# Generate random coefficients for polynomial
 	coefficients = [secret]
 	for _ in range(threshold - 1):
 		coefficients.append(random.randint(1, prime - 1))
 	
-	# Generate shares (x, f(x))
 	shares = []
 	for x in range(1, total_shares + 1):
 		y = evaluate_polynomial(coefficients, x, prime)
@@ -86,12 +76,10 @@ def reconstruct_secret(shares, prime=PRIME):
 	if len(shares) == 0:
 		raise ValueError("Need at least one share")
 	
-	# Lagrange interpolation to find f(0)
 	secret = 0
 	x_coords = [x for x, _ in shares]
 	
 	for i, (x_i, y_i) in enumerate(shares):
-		# Calculate Lagrange basis polynomial for x_i
 		numerator = 1
 		denominator = 1
 		
@@ -100,7 +88,6 @@ def reconstruct_secret(shares, prime=PRIME):
 				numerator = (numerator * (0 - x_j)) % prime
 				denominator = (denominator * (x_i - x_j)) % prime
 		
-		# Calculate the term for this share and add to secret
 		lagrange_term = (y_i * numerator * mod_inverse(denominator, prime)) % prime
 		secret = (secret + lagrange_term) % prime
 	
@@ -129,28 +116,22 @@ def generate_user_key():
 
 def split_encrypted_key(encrypted_data, total_shares=5, threshold=3):
 	"""Split encrypted key data into shares using SSSS"""
-	# Split data into chunks of 30 bytes (240 bits) to fit under the prime
 	chunk_size = 30
 	chunks = [encrypted_data[i:i+chunk_size] for i in range(0, len(encrypted_data), chunk_size)]
 	print(f"Split encrypted data into {len(chunks)} chunks")
 	
-	# Create shares for each chunk
 	all_shares = []
 	for i, chunk in enumerate(chunks):
-		# Convert chunk to integer
 		chunk_int = bytes_to_int(chunk)
 		
-		# Generate shares for this chunk
 		chunk_shares = split_secret(chunk_int, threshold, total_shares)
 		
-		# Add chunk index to each share
 		formatted_shares = []
 		for x, y in chunk_shares:
 			formatted_shares.append((str(x), str(y), str(i), str(len(chunk))))
 		
 		all_shares.append(formatted_shares)
 	
-	# Return shares for all chunks
 	return {
 		"chunks": len(chunks),
 		"shares": all_shares,
@@ -158,31 +139,39 @@ def split_encrypted_key(encrypted_data, total_shares=5, threshold=3):
 	}
 
 def combine_key_shares(share_data):
-	"""Combine key shares into the original encrypted key"""
-	# Extract data from the share structure
+	"""Combine key shares into the original encrypted key. Receives JSON"""
 	chunks_count = share_data["chunks"]
-	all_shares = share_data["shares"]
+	all_shares_raw = share_data["shares"]
 	total_length = share_data["total_length"]
+
+	all_shares = []
+	for share_str in all_shares_raw:
+		if isinstance(share_str, str):
+			try:
+				parsed_share = json.loads(share_str)
+				all_shares.append(parsed_share)
+			except json.JSONDecodeError as e:
+				print(f"JSON decode error: {e} on string: {share_str[:50]}...")
+				raise ValueError(f"Invalid share format")
+		else:
+			all_shares.append(share_str)
+	
+	print(f"Parsed {len(all_shares)} shares for {chunks_count} chunks")
 	
 	# Reconstruct each chunk
 	reconstructed_chunks = []
 	
 	for chunk_shares in all_shares:
-		# Extract chunk index and length
 		chunk_index = int(chunk_shares[0][2])
 		chunk_length = int(chunk_shares[0][3])
 		
-		# Convert shares back to integers for reconstruction
 		numeric_shares = [(int(x), int(y)) for x, y, _, _ in chunk_shares]
 		
-		# Reconstruct the chunk
 		chunk_int = reconstruct_secret(numeric_shares)
 		
-		# Convert back to bytes
 		chunk_bytes = int_to_bytes(chunk_int, chunk_length)
 		reconstructed_chunks.append((chunk_index, chunk_bytes))
 	
-	# Sort chunks by index and combine
 	reconstructed_chunks.sort(key=lambda x: x[0])
 	reconstructed_data = b''.join([chunk for _, chunk in reconstructed_chunks])
 	
@@ -204,12 +193,10 @@ def decrypt_with_master_key(encrypted_data):
 	
 	cipher = AES.new(MASTER_KEY, AES.MODE_GCM, nonce=nonce)
 	
-	# Decrypt and verify the authentication tag
 	try:
 		plaintext = cipher.decrypt_and_verify(ciphertext, tag)
 		return plaintext
 	except ValueError:
-		# Authentication failed - data was tampered with
 		raise SecurityError("Decryption failed: authentication tag verification failed")
 
 def handle_request(request):
@@ -218,7 +205,6 @@ def handle_request(request):
 		action = request.get("action", "")
 		print(f"Processing action: {action}")
 		
-		# Basic ping/echo for testing
 		if action == "ping":
 			return {
 				"status": "success",
@@ -226,22 +212,17 @@ def handle_request(request):
 				"echo": request
 			}
 			
-		# User registration - generate and encrypt a new key
 		elif action == "register":
 			username = request.get("username")
 			if not username:
 				return {"status": "error", "message": "Username required"}
 			
-			# Ensure master key exists
 			generate_master_key()
 			
-			# Generate a new key for the user
 			user_key = generate_user_key()
 			
-			# Encrypt it with the master key
 			encrypted_key = encrypt_with_master_key(user_key)
 
-			# Split the encrypted key into shares
 			total_shares = 5
 			threshold = 3
 			key_shares = split_encrypted_key(encrypted_key, total_shares, threshold)
@@ -254,16 +235,13 @@ def handle_request(request):
 				}
 			}
 			
-		# Auth success - retrieve a key for a successfully authenticated user
-		elif action == "auth_verify":  # Renamed from auth_success
+		elif action == "auth_verify": 
 			key_shares = request.get("key_shares")
 			if not key_shares:
 				return {"status": "error", "message": "Key shares required"}
 			
-			# Ensure master key exists
 			generate_master_key()
 
-			# Combine shares to get the encrypted key
 			try:
 				encrypted_key = combine_key_shares(key_shares)
 				decrypted_key = decrypt_with_master_key(encrypted_key)                
@@ -289,16 +267,13 @@ def handle_request(request):
 def main():
 	print("=== Starting Key Management VSOCK Server in Nitro Enclave ===")
 	
-	# Generate the master key at startup
 	generate_master_key()
 	
-	# Create VSOCK server
 	s = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
 	s.bind((socket.VMADDR_CID_ANY, 5005))
 	s.listen(5)
 	print("VSOCK server running on port 5005")
 
-	# Process connection loop
 	while True:
 		print("Waiting for connections...")
 		conn, addr = s.accept()
@@ -309,13 +284,10 @@ def main():
 			if data:
 				print(f"Received data: {data[:100]}...")
 				
-				# Parse JSON request
 				request = json.loads(data.decode())
 				
-				# Process the request
 				response = handle_request(request)
 				
-				# Send the response
 				conn.send(json.dumps(response).encode())
 				print("Response sent")
 		except Exception as e:
@@ -327,7 +299,6 @@ def main():
 			conn.close()
 
 if __name__ == "__main__":
-	# Keep trying if we encounter errors
 	while True:
 		try:
 			main()
@@ -340,7 +311,6 @@ PYSERVER
 chmod +x /home/ec2-user/secure-enclave/key_server.py
 chown -R ec2-user:ec2-user /home/ec2-user/secure-enclave
 
-# Build the Docker image and EIF file
 cd /home/ec2-user/secure-enclave/
 echo "Building Docker image..."
 sudo docker build -t keymanager:latest -f Dockerfile.enclave .
@@ -348,7 +318,6 @@ sudo docker build -t keymanager:latest -f Dockerfile.enclave .
 echo "Building enclave image file..."
 sudo nitro-cli build-enclave --docker-uri keymanager:latest --output-file keymanager.eif
 
-# Create a run script for manually starting the enclave
 cat <<RUNSCRIPT > /home/ec2-user/secure-enclave/run_enclave.sh
 #!/bin/bash
 echo "Starting Nitro Enclave manually..."
@@ -358,7 +327,6 @@ RUNSCRIPT
 chmod +x /home/ec2-user/secure-enclave/run_enclave.sh
 chown ec2-user:ec2-user /home/ec2-user/secure-enclave/run_enclave.sh
 
-# Also run immediately to ensure it's running now
 echo "Starting Nitro Enclave..."
 RUNNING_ENCLAVE=$(sudo nitro-cli describe-enclaves)
 if [ "$RUNNING_ENCLAVE" == "[]" ]; then
