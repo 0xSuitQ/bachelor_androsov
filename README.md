@@ -6,7 +6,7 @@
 Андросов Нікіта Сергійович
 
 ### Науковий керівник
-[Ім'я та посада наукового керівника]
+Райтер Орест Костянтинович, PhD
 
 ## Короткий опис проекту
 
@@ -28,7 +28,7 @@
 
 1. **Клонування репозиторію**
    ```bash
-   git clone https://github.com/[username]/graduation_project_2.0.git
+   git clone https://github.com/
    cd graduation_project_2.0
    ```
 
