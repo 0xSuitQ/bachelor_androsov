@@ -636,31 +636,6 @@ resource "aws_instance" "demo_ec2" {
                       traceback.print_exc()
                       return {"status": "error", "message": str(e)}
 
-@app.post("/auth_verify")
-def auth_verify(request: AuthVerifyRequest):
-    """Verify the client's proof and return server proof"""
-    client_proof = request.client_proof
-    session_id = request.session_id
-    
-    session = active_sessions[session_id]
-    verifier = session['verifier']
-    username = session['username']
-    
-    client_proof_bytes = bytes.fromhex(client_proof)
-    
-    server_proof = verifier.verify_session(client_proof_bytes)
-    server_proof_hex = server_proof.hex()
-    
-    del active_sessions[session_id]
-    
-    # ... отримання ключів з блокчейну та анклаву ...
-    
-    return {
-        "status": "success",
-        "server_proof": server_proof_hex,
-        "user_key": user_key
-    }
-
               @app.on_event("startup")
               async def startup_event():
                   global ENCLAVE_CID
