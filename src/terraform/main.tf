@@ -1,6 +1,3 @@
-############################
-# Terraform Configuration
-############################
 terraform {
   required_version = ">= 1.0"
   required_providers {
@@ -12,7 +9,6 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
-    # Add this line:
     local = {
       source  = "hashicorp/local"
       version = "~> 2.1.0"
@@ -24,9 +20,12 @@ provider "aws" {
   region = "us-east-1"
 }
 
-############################
-# Networking Setup
-############################
+variable "server_private_key" {
+  description = "Private key for the server account"
+  type        = string
+  sensitive   = true
+}
+
 resource "aws_vpc" "demo_vpc" {
   cidr_block = "10.0.0.0/16"
   tags = {
@@ -43,7 +42,7 @@ resource "aws_internet_gateway" "demo_igw" {
 
 resource "aws_subnet" "demo_subnet" {
   vpc_id                  = aws_vpc.demo_vpc.id
-  cidr_block             = "10.0.1.0/24"
+  cidr_block              = "10.0.1.0/24"
   availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
   tags = {
@@ -67,64 +66,111 @@ resource "aws_route_table_association" "demo_rta" {
   subnet_id      = aws_subnet.demo_subnet.id
 }
 
-############################
-# Security Group
-############################
-resource "aws_security_group" "demo_sg" {
-  name        = "DemoSG-HTTPS"
-  description = "Allow inbound HTTPS + SSH"
-  vpc_id      = aws_vpc.demo_vpc.id
-
-  # Inbound
-  ingress {
-    description   = "SSH (Not recommended open to all in production!)"
-    from_port     = 22
-    to_port       = 22
-    protocol      = "tcp"
-    cidr_blocks   = ["0.0.0.0/0"]
-  }
-
-  # ingress {
-  #   description   = "HTTPS"
-  #   from_port     = 443
-  #   to_port       = 443
-  #   protocol      = "tcp"
-  #   cidr_blocks   = ["0.0.0.0/0"]
-  # }
-
-  # ingress {
-  #     description   = "HTTPS"
-  #     from_port     = 8443
-  #     to_port       = 8443
-  #     protocol      = "tcp"
-  #     cidr_blocks   = ["0.0.0.0/0"]
-  #   }
-
-    ingress {
-      description = "HTTP for FastAPI"
-      from_port   = 8080
-      to_port     = 8080
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-
-  # Outbound
-  egress {
-    description   = "All traffic"
-    from_port     = 0
-    to_port       = 0
-    protocol      = "-1"
-    cidr_blocks   = ["0.0.0.0/0"]
-  }
-
+resource "aws_subnet" "demo_subnet_b" {
+  vpc_id                  = aws_vpc.demo_vpc.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "us-east-1b"
+  map_public_ip_on_launch = true
   tags = {
-    Name = "DemoSG-HTTPS"
+    Name = "DemoSubnetB"
   }
 }
 
-############################
-# S3 Bucket for Scripts
-############################
+resource "aws_subnet" "demo_subnet_c" {
+  vpc_id                  = aws_vpc.demo_vpc.id
+  cidr_block              = "10.0.3.0/24"
+  availability_zone       = "us-east-1c"
+  map_public_ip_on_launch = true
+  tags = {
+    Name = "DemoSubnetC"
+  }
+}
+
+resource "aws_route_table_association" "demo_rta_b" {
+  route_table_id = aws_route_table.demo_routetable.id
+  subnet_id      = aws_subnet.demo_subnet_b.id
+}
+
+resource "aws_route_table_association" "demo_rta_c" {
+  route_table_id = aws_route_table.demo_routetable.id
+  subnet_id      = aws_subnet.demo_subnet_c.id
+}
+
+resource "aws_security_group" "demo_sg" {
+  name        = "demo-sg"
+  description = "Allow SSH, HTTP, HTTPS inbound traffic"
+  vpc_id      = aws_vpc.demo_vpc.id
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "FastAPI"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "DemoSG"
+  }
+}
+
+resource "aws_security_group" "alb_sg" {
+  name        = "ALB-SecurityGroup"
+  description = "Security group for Application Load Balancer"
+  vpc_id      = aws_vpc.demo_vpc.id
+
+  ingress {
+    description = "HTTP traffic"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS traffic"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "ALB-SecurityGroup"
+  }
+}
+
+resource "aws_security_group_rule" "allow_alb_traffic" {
+  security_group_id        = aws_security_group.demo_sg.id
+  type                     = "ingress"
+  from_port                = 8080
+  to_port                  = 8080
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb_sg.id
+}
+
 resource "aws_s3_bucket" "scripts_bucket" {
   bucket = "nitro-enclave-scripts-${random_id.bucket_suffix.hex}"
   
@@ -140,12 +186,10 @@ resource "aws_s3_object" "enclave_setup_script" {
   etag   = filemd5("${path.module}/enclave_setup.sh")
 }
 
-# Generate a random suffix for the bucket name to ensure uniqueness
 resource "random_id" "bucket_suffix" {
   byte_length = 4
 }
 
-# First set ownership controls to enable ACLs
 resource "aws_s3_bucket_ownership_controls" "scripts_bucket_ownership" {
   bucket = aws_s3_bucket.scripts_bucket.id
 
@@ -154,24 +198,10 @@ resource "aws_s3_bucket_ownership_controls" "scripts_bucket_ownership" {
   }
 }
 
-# Then set the ACL (with dependency)
 resource "aws_s3_bucket_acl" "scripts_bucket_acl" {
   depends_on = [aws_s3_bucket_ownership_controls.scripts_bucket_ownership]
   bucket     = aws_s3_bucket.scripts_bucket.id
   acl        = "private"
-}
-
-############################
-# EC2 Instance
-############################
-data "aws_ami" "amazonlinux2" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["amzn2-ami-kernel-*-hvm-2.0*"]
-  }
 }
 
 resource "aws_iam_role" "ec2_s3_access" {
@@ -214,14 +244,30 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_s3_access.name
 }
 
-resource "aws_instance" "demo_ec2" {
-  ami                    = data.aws_ami.amazonlinux2.id
-  instance_type          = "m5.xlarge"
-  subnet_id              = aws_subnet.demo_subnet.id
-  vpc_security_group_ids = [aws_security_group.demo_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
+data "aws_ami" "amazonlinux2" {
+  most_recent = true
+  owners      = ["amazon"]
 
-  # Enable Nitro Enclaves (m5a.large supports enclaves)
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-kernel-*-hvm-2.0*"]
+  }
+}
+
+resource "aws_launch_template" "nitro_enclave_template" {
+  name_prefix   = "nitro-enclave-"
+  image_id      = data.aws_ami.amazonlinux2.id
+  instance_type = "m5.xlarge"
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_profile.name
+  }
+
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.demo_sg.id]
+  }
+
   enclave_options {
     enabled = true
   }
@@ -230,12 +276,10 @@ resource "aws_instance" "demo_ec2" {
     http_endpoint = "enabled"
     http_tokens   = "optional"
   }
-
-  # Cloud-Init / User Data to install dependencies
+  
   user_data = <<-EOF
               #!/bin/bash
               sudo yum update -y
-              # 1) Install Python + FastAPI + Uvicorn
               sudo amazon-linux-extras install epel -y
               sudo amazon-linux-extras install python3.8 -y
               sudo yum install -y python3-pip openssl
@@ -243,19 +287,15 @@ resource "aws_instance" "demo_ec2" {
               sudo pip3 install "urllib3<2.0" requests
               sudo pip3 install fastapi uvicorn pycryptodome srp web3 python-dotenv
 
-              # 2) Install Docker
               sudo amazon-linux-extras install docker -y
               sudo systemctl start docker
               sudo systemctl enable docker
               sudo systemctl status docker
 
-              # 3) Install Nitro Enclaves CLI
               sudo amazon-linux-extras install aws-nitro-enclaves-cli -y
               sudo yum install -y aws-nitro-enclaves-cli-devel
               sudo usermod -aG ne ec2-user
 
-              # 4) Configure Enclave Allocator
-              # First load the kernel module
               echo "nitro_enclaves" | sudo tee /etc/modules-load.d/nitro_enclaves.conf
               sudo modprobe nitro_enclaves
               sleep 2
@@ -274,10 +314,8 @@ resource "aws_instance" "demo_ec2" {
               sudo systemctl enable nitro-enclaves-allocator.service
               sudo systemctl start nitro-enclaves-allocator.service
 
-              # Check if the device exists
               ls -la /dev/nitro_enclaves || echo "Device file still not created"
-
-              # 5) Generate a self-signed SSL certificate              
+          
               IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
               mkdir -p /home/ec2-user/certs
               # build a minimal req.conf with SAN
@@ -306,7 +344,6 @@ resource "aws_instance" "demo_ec2" {
 
               chown -R ec2-user:ec2-user /home/ec2-user/certs
 
-              # 6) Enhanced FastAPI app with Enclave Integration
               mkdir -p /home/ec2-user/app
               curl -s https://raw.githubusercontent.com/0xSuitQ/graduation_abi/main/contract_abi.json > /home/ec2-user/app/contract_abi.json
               chown ec2-user:ec2-user /home/ec2-user/app/contract_abi.json
@@ -676,7 +713,6 @@ resource "aws_instance" "demo_ec2" {
 
               chown -R ec2-user:ec2-user /home/ec2-user/app
 
-              # 7) Systemd service for FastAPI on HTTPS (port 443)
               cat <<SERVICE > /etc/systemd/system/fastapi.service
               [Unit]
               Description=FastAPI over HTTPS
@@ -699,34 +735,123 @@ resource "aws_instance" "demo_ec2" {
               systemctl enable fastapi.service
               systemctl start fastapi.service
 
-              # 8) Quick test for Nitro Enclaves
               echo "Testing Nitro CLI..."
               nitro-cli describe-enclaves || echo "No enclaves running or device missing"
 
               sudo systemctl start docker
               sudo systemctl enable docker
 
-              # 9) Download and run the Secure Key Management Enclave setup
               yum install -y aws-cli
               aws s3 cp s3://${aws_s3_bucket.scripts_bucket.id}/enclave_setup.sh /tmp/
               chmod +x /tmp/enclave_setup.sh
               /tmp/enclave_setup.sh
               EOF
-  depends_on = [
-    aws_s3_object.enclave_setup_script
-  ]
 
-  tags = {
-    Name = "DemoEC2withNitro-HTTPS"
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "NitroEnclaveInstance"
+    }
   }
 }
 
-output "ec2_public_ip" {
-  value       = aws_instance.demo_ec2.public_ip
-  description = "Public IP of the instance"
+resource "aws_autoscaling_group" "nitro_enclave_asg" {
+  name                = "nitro-enclave-asg"
+  desired_capacity    = 2
+  max_size            = 5
+  min_size            = 1
+  vpc_zone_identifier = [
+    aws_subnet.demo_subnet.id,
+    aws_subnet.demo_subnet_b.id,
+    aws_subnet.demo_subnet_c.id
+  ]
+  
+  target_group_arns = [aws_lb_target_group.asg_target_group.arn]
+  health_check_type = "ELB"
+  
+  launch_template {
+    id      = aws_launch_template.nitro_enclave_template.id
+    version = "$Latest"
+  }
+  
+  tag {
+    key                 = "Name"
+    value               = "NitroEnclaveASG"
+    propagate_at_launch = true
+  }
+
+  depends_on = [
+    aws_s3_object.enclave_setup_script
+  ]
 }
 
-output "ec2_public_dns" {
-  value       = aws_instance.demo_ec2.public_dns
-  description = "Public DNS of the instance"
+resource "aws_lb" "nitro_enclave_alb" {
+  name               = "nitro-enclave-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = [
+    aws_subnet.demo_subnet.id,
+    aws_subnet.demo_subnet_b.id,
+    aws_subnet.demo_subnet_c.id
+  ]
+
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "NitroEnclaveALB"
+  }
+}
+
+resource "aws_lb_target_group" "asg_target_group" {
+  name     = "nitro-enclave-tg"
+  port     = 8080
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.demo_vpc.id
+  
+  health_check {
+    path                = "/"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    matcher             = "200"
+  }
+}
+
+resource "aws_lb_listener" "http_listener" {
+  load_balancer_arn = aws_lb.nitro_enclave_alb.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.asg_target_group.arn
+  }
+}
+
+resource "aws_autoscaling_policy" "scale_up" {
+  name                   = "scale-up"
+  scaling_adjustment     = 1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 300
+  autoscaling_group_name = aws_autoscaling_group.nitro_enclave_asg.name
+}
+
+resource "aws_autoscaling_policy" "scale_down" {
+  name                   = "scale-down"
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 300
+  autoscaling_group_name = aws_autoscaling_group.nitro_enclave_asg.name
+}
+
+output "alb_dns_name" {
+  value       = aws_lb.nitro_enclave_alb.dns_name
+  description = "DNS name of the Application Load Balancer"
+}
+
+output "s3_bucket_name" {
+  value       = aws_s3_bucket.scripts_bucket.id
+  description = "Name of the S3 bucket containing scripts"
 }

@@ -35,7 +35,7 @@ class Encryption:
 
         self.decrypt_output_file = self.user_file[:-5].split(".")
         self.decrypt_output_file = ".".join(self.decrypt_output_file[:-1]) \
-            + "__decrypted__." + self.decrypt_output_file[-1]
+            + "__decrypted__"
 
         self.hashed_key_salt = dict()
         self.hash_key_salt()
@@ -106,7 +106,7 @@ class LoginWindow:
         self.auth_client = AuthClient(AUTH_SERVER_URL)
 
         self.root = root
-        self.root.title("Login")
+        self.root.title("")
         self.root.geometry("300x250")
         self.root.resizable(False, False)
         
@@ -258,7 +258,7 @@ class LoginWindow:
             
             if result.get('status') == 'success':
                 decrypted_key = result.get('decrypted_key', '')
-                print("Decrypted key:", decrypted_key)
+                # print("Decrypted key:", decrypted_key)
 
                 self.reg_message_var.set("")
                 self.reg_message_label.config(foreground="green")
@@ -474,15 +474,6 @@ class MainWindow:
         )
         self.refresh_btn.grid(row=5, column=0, sticky=tk.W+tk.E, padx=10, pady=5)
         
-        self.parent_dir_btn = ttk.Button(
-            self.left_panel,
-            text="GO UP",
-            command=self.go_to_parent_directory,
-            style=btn_style,
-            width=btn_width
-        )
-        self.parent_dir_btn.grid(row=6, column=0, sticky=tk.W+tk.E, padx=10, pady=5)
-
     def _create_right_panel(self):
         """Create the right panel with file listing"""
         self.dir_var = tk.StringVar()
@@ -632,7 +623,6 @@ class MainWindow:
         self.encrypt_btn.configure(state="disabled")
         self.decrypt_btn.configure(state="disabled")
         self.refresh_btn.configure(state="disabled")
-        self.parent_dir_btn.configure(state="disabled")
         self.reset_btn.configure(text="CANCEL", command=self.cancel_callback)
         self.file_tree.unbind("<Double-1>")
         self.file_tree.unbind("<<TreeviewSelect>>")
@@ -644,7 +634,6 @@ class MainWindow:
         self.encrypt_btn.configure(state="normal")
         self.decrypt_btn.configure(state="normal")
         self.refresh_btn.configure(state="normal")
-        self.parent_dir_btn.configure(state="normal")
         self.reset_btn.configure(text="RESET", command=self.reset_callback)
         self.file_tree.bind("<Double-1>", self.on_file_double_click)
         self.file_tree.bind("<<TreeviewSelect>>", self.on_file_select)
